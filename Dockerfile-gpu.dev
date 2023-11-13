@@ -1,0 +1,86 @@
+# ---------------------------------------
+# Base image for redis
+FROM redis:7-bookworm as redis
+
+# ---------------------------------------
+# Build frontend
+FROM node:20-bookworm-slim as frontend
+
+WORKDIR /usr/src/app
+COPY ./web/package.json ./web/package-lock.json ./
+RUN npm ci
+
+COPY ./web /usr/src/app/web/
+WORKDIR /usr/src/app/web/
+RUN npm run build
+
+# ---------------------------------------
+# Runtime environment
+FROM python:3.11-slim-bookworm as release
+
+
+# Set ENV
+ENV NODE_ENV='production'
+ENV TZ=Etc/UTC
+ENV LLAMA_CUBLAS=1
+WORKDIR /usr/src/app
+
+
+
+COPY ./cuda-kits/cuda-repo-debian12-12-3-local_12.3.0-545.23.06-1_amd64.deb /usr/src/app
+RUN dpkg -i cuda-repo-debian12-12-3-local_12.3.0-545.23.06-1_amd64.deb
+RUN cp /var/cuda-repo-debian12-12-3-local/cuda-*-keyring.gpg /usr/share/keyrings/
+
+# add "contrib" to /etc/apt/sources.list
+#RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm contrib  main non-free " >> /etc/apt/sources.list \
+#    && echo "deb-src http://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm contrib"   main  non-free >> /etc/apt/sources.list
+
+#RUN echo "deb http://mirrors.tuna.tsinghua.edu.cn/debian-security/ bookworm-security contrib   main non-free " >> /etc/apt/sources.list \
+#    && echo "deb-src http://mirrors.tuna.tsinghua.edu.cn/debian-security/ bookworm-security contrib   main non-free " >> /etc/apt/sources.list
+
+
+RUN echo "deb http://deb.debian.org/debian/ bookworm contrib  main non-free " >> /etc/apt/sources.list \
+    && echo "deb-src http://deb.debian.org/debian/ bookworm contrib"   main  non-free >> /etc/apt/sources.list
+
+RUN echo "deb http://deb.debian.org/debian-security/ bookworm-security contrib   main non-free " >> /etc/apt/sources.list \
+    && echo "deb-src http://deb.debian.org/debian-security/ bookworm-security contrib   main non-free " >> /etc/apt/sources.list
+
+RUN apt-get update
+RUN apt-get -y install cuda-toolkit-12-3
+
+
+
+ENV PATH=/usr/local/cuda/bin:${PATH}
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH}
+
+
+# Copy artifacts
+COPY --from=redis /usr/local/bin/redis-server /usr/local/bin/redis-server
+COPY --from=redis /usr/local/bin/redis-cli /usr/local/bin/redis-cli
+COPY --from=frontend /usr/src/app/web/build /usr/src/app/api/static/
+COPY ./api /usr/src/app/api
+COPY scripts/deploy.sh /usr/src/app/deploy.sh
+#COPY apt/sources.list /etc/apt/sources.list
+
+#RUN apt-get update && apt-get install -y --no-install-recommends gnupg
+#RUN apt-key adv --keyserver hkp://p80.pool.sks-keyservers.net --recv-keys 40976EAF437D05B5 3B4FE6ACC0B21F32
+# Install api dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends cmake
+RUN apt-get install -y --no-install-recommends build-essential
+RUN apt-get install -y --no-install-recommends dumb-init
+RUN apt-get install -y --no-install-recommends  curl
+# RUN pip config set global.index-url  https://mirrors.aliyun.com/pypi/simple
+RUN pip install --no-cache-dir ./api
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/*
+RUN chmod 755 /usr/src/app/deploy.sh
+RUN chmod 755 /usr/local/bin/redis-server
+RUN chmod 755 /usr/local/bin/redis-cli
+RUN mkdir -p /etc/redis
+RUN mkdir -p /data/db
+RUN mkdir -p /usr/src/app/weights
+RUN echo "appendonly yes" >> /etc/redis/redis.conf
+RUN echo "dir /data/db/" >> /etc/redis/redis.conf
+
+EXPOSE 8008
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/bin/bash", "-c", "/usr/src/app/dev-gpu.sh"]

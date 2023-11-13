@@ -140,3 +140,32 @@ To run Serge in development mode:
 git clone https://github.com/serge-chat/serge.git
 docker compose -f docker-compose.dev.yml up -d --build
 ```
+
+To run Serge in gpu development mode:
+```bash
+git clone https://github.com/serge-chat/serge.git
+
+#download cuda 
+mkdir cuda-kits
+cd cuda-kits
+wget https://developer.download.nvidia.com/compute/cuda/repos/debian12/x86_64/cuda-keyring_1.1-1_all.deb
+
+#install nvidia-container-toolkit(apt)
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+  && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list \
+  && \
+    sudo apt-get update
+    
+sudo apt-get install -y nvidia-container-toolkit
+
+#install nvidia-container-toolkit(yum)
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/rpm/nvidia-container-toolkit.repo | \
+  sudo tee /etc/yum.repos.d/nvidia-container-toolkit.repo
+
+sudo yum install -y nvidia-container-toolkit
+
+
+docker compose -f docker-compose-gpu.dev.yml up -d --build
+```

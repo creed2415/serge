@@ -1,0 +1,22 @@
+services:
+  serge:
+    restart: on-failure
+    build:
+      context: .
+      dockerfile: Dockerfile-gpu.dev
+    container_name: serge
+    ports:
+      - 8008:8008
+    volumes:
+      - /home/data/weights:/usr/src/app/weights
+      - /home/data/db:/data/db/
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+
